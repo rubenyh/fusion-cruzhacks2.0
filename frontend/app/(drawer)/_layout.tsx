@@ -6,6 +6,7 @@ import { Drawer } from "expo-router/drawer";
 import { useState } from "react";
 import { Dimensions, Platform, Pressable, StyleSheet, Switch, Text, TouchableOpacity, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { useAuth } from "@/context/AuthContext";
 const width = Dimensions.get("window").width;
 
 const customTitles: Record<string, string> = {
@@ -46,10 +47,20 @@ export default function Layout() {
 
 function CustomDrawerContent() {
   const router = useRouter();
+  const { user, isAuthenticated, login, logout } = useAuth();
   const [isDarkMode, setIsDarkMode] = useState(false);
 
-  const handleLogout = async () => {
+  const handleAuth = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    try {
+      if (isAuthenticated) {
+        await logout();
+      } else {
+        await login();
+      }
+    } catch (error) {
+      console.error('Auth error:', error);
+    }
   };
 
   const toggleTheme = () => {
@@ -68,11 +79,18 @@ function CustomDrawerContent() {
           <Text style={styles.titleText}>Menu</Text>
         </View>
 
+        {isAuthenticated && user && (
+          <View style={styles.userInfo}>
+            <Text style={styles.userName}>{user.name || 'User'}</Text>
+            <Text style={styles.userEmail}>{user.email}</Text>
+          </View>
+        )}
+
         <View>
           <View style={styles.divider} />
           {menuItems.map((item, index) => (
             <View key={index}>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.menuItemContainer}
                 onPress={() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -86,13 +104,19 @@ function CustomDrawerContent() {
           ))}
         </View>
       </View>
-      
+
       <Pressable
-        onPress={handleLogout}
+        onPress={handleAuth}
         style={({ pressed }) => [styles.logoutButton, pressed ? styles.logoutButtonPressed : {}]}
       >
-        <MaterialCommunityIcons name='logout' size={20} color="white" />
-        <Text style={styles.logoutText}>Log In / Sign Up</Text>
+        <MaterialCommunityIcons
+          name={isAuthenticated ? 'logout' : 'login'}
+          size={20}
+          color="white"
+        />
+        <Text style={styles.logoutText}>
+          {isAuthenticated ? 'Logout' : 'Log In / Sign Up'}
+        </Text>
       </Pressable>
     </View>
   );
@@ -176,5 +200,19 @@ const styles = StyleSheet.create({
     color: "white",
     fontSize: 16,
     fontWeight: "600",
+  },
+  userInfo: {
+    paddingVertical: 16,
+    paddingHorizontal: 8,
+  },
+  userName: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: "white",
+    marginBottom: 4,
+  },
+  userEmail: {
+    fontSize: 14,
+    color: "#cccccc",
   },
 });

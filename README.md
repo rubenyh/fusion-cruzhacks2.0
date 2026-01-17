@@ -118,3 +118,61 @@ The backend uses FastAPI with automatic OpenAPI documentation.
 - Add image resizing/processing
 - Implement authentication headers
 - Add progress indicators for large uploads
+
+## Auth0 Authentication Setup
+
+The app includes Auth0 authentication integration. When users are not signed in, the history section shows "Login to save history!" with a login button.
+
+### Auth0 Setup Steps
+
+1. **Create Auth0 Account & Application**:
+   - Go to [auth0.com](https://auth0.com) and create an account
+   - Create a new Application (Native App)
+   - Note down your Domain and Client ID
+
+2. **Configure Allowed Callback URLs**:
+   - In Auth0 Dashboard → Applications → Your App → Settings
+   - Add these URLs to "Allowed Callback URLs":
+     ```
+     http://localhost:8081,http://localhost:8082,exp://localhost:8081,exp://localhost:8082
+     ```
+   - Add to "Allowed Logout URLs":
+     ```
+     http://localhost:8081,http://localhost:8082,exp://localhost:8081,exp://localhost:8082
+     ```
+
+3. **Update Environment Variables**:
+   - Edit `frontend/.env`:
+     ```env
+     EXPO_PUBLIC_AUTH0_DOMAIN=your-domain.auth0.com
+     EXPO_PUBLIC_AUTH0_CLIENT_ID=your-client-id
+     EXPO_PUBLIC_AUTH0_AUDIENCE=https://your-api-identifier
+     ```
+
+4. **Update App Configuration**:
+   - Edit `frontend/app.json` in the react-native-auth0 plugin section:
+     ```json
+     [
+       "react-native-auth0",
+       {
+         "domain": "your-domain.auth0.com",
+         "clientId": "your-client-id"
+       }
+     ]
+     ```
+
+### Authentication Features
+
+- **Login/Logout**: Available through the drawer menu
+- **User Info**: Shows user name and email in drawer when authenticated
+- **Conditional UI**: History section changes based on auth state
+- **Token Management**: Automatic token storage and refresh
+
+### Testing Authentication
+
+1. Start the app: `npm start`
+2. Open drawer (☰ button)
+3. Tap "Log In / Sign Up"
+4. Complete Auth0 authentication flow
+5. User info should appear in drawer
+6. History section should show "No history yet..." instead of login prompt
