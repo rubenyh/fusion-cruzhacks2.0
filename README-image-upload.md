@@ -14,14 +14,13 @@ This feature allows users to upload images or take photos directly from their mo
 
 ### API Configuration
 
-The API endpoint is easily configurable in `frontend/app/(drawer)/(tabs)/stackhome/index.tsx`:
+The API endpoint is configured via environment variable in `frontend/.env`:
 
-```javascript
-const API_CONFIG = {
-  baseUrl: 'http://localhost:3000', // Change this to your backend URL
-  uploadEndpoint: '/api/upload', // Change this to your upload endpoint
-};
+```env
+EXPO_PUBLIC_API_BASE_URL=http://192.168.1.42:8000
 ```
+
+The upload endpoint is `/api/upload`.
 
 ### Usage
 1. Tap "Upload / Take Picture" button
@@ -33,8 +32,30 @@ const API_CONFIG = {
 
 ## Backend Implementation
 
-### Example Server
-See `backend/example-server.js` for a complete Node.js/Express implementation.
+### FastAPI Server
+The backend uses FastAPI with automatic OpenAPI documentation.
+
+### Running the FastAPI Server
+
+1. **Install dependencies**:
+   ```bash
+   cd backend
+   pip install -r requirements.txt
+   ```
+
+2. **Start the server**:
+   ```bash
+   # Using the startup script
+   ./start-server.sh
+
+   # Or manually
+   uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+   ```
+
+3. **Access points**:
+   - API: `http://localhost:8000`
+   - Documentation: `http://localhost:8000/docs`
+   - Health check: `http://localhost:8000/api/health`
 
 ### API Requirements
 
@@ -75,14 +96,14 @@ See `backend/example-server.js` for a complete Node.js/Express implementation.
 
 ### Frontend
 1. Packages are already installed (`expo-image-picker`, `expo-media-library`)
-2. Permissions are handled automatically
-3. Update `API_CONFIG` with your backend URL
+2. Environment variable is configured in `.env`
+3. Update `EXPO_PUBLIC_API_BASE_URL` to match your server IP/port
 
 ### Backend
-1. Install dependencies: `npm install express multer`
-2. Create `uploads/` directory
-3. Run the server: `node example-server.js`
-4. Update frontend `API_CONFIG.baseUrl` to match your server
+1. Install Python dependencies: `pip install -r requirements.txt`
+2. Create `uploads/` directory in backend folder
+3. Run the server: `uvicorn app.main:app --reload --host 0.0.0.0 --port 8000`
+4. Update frontend `.env` with correct server URL
 
 ## Security Considerations
 - Implement authentication/authorization

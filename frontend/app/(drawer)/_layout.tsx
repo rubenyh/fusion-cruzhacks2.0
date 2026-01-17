@@ -31,7 +31,7 @@ export default function Layout() {
                   style={{ marginLeft: 10 }}
                   onPress={() => router.back()}
                 >
-                  <MaterialCommunityIcons name="arrow-left" size={24} color="#000000" />
+                  <MaterialCommunityIcons name="arrow-left" size={24} color="#15193a" />
                 </TouchableOpacity>
               );
             }
@@ -65,7 +65,7 @@ function CustomDrawerContent() {
     <View style={styles.drawerContainer}>
       <View style={styles.titleContainer}>
         <View style={styles.headerContainer}>
-          <Text style={styles.titleText}>Menú</Text>
+          <Text style={styles.titleText}>Menu</Text>
         </View>
 
         <View>
@@ -92,7 +92,7 @@ function CustomDrawerContent() {
         style={({ pressed }) => [styles.logoutButton, pressed ? styles.logoutButtonPressed : {}]}
       >
         <MaterialCommunityIcons name='logout' size={20} color="white" />
-        <Text style={styles.logoutText}>Cerrar Sesión</Text>
+        <Text style={styles.logoutText}>Log In / Sign Up</Text>
       </Pressable>
     </View>
   );
@@ -106,7 +106,7 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 24,
     justifyContent: "space-between",
-    backgroundColor: "white",
+    backgroundColor: "#333552",
   },
   titleContainer: {
     marginTop: 40,
@@ -119,7 +119,7 @@ const styles = StyleSheet.create({
   titleText: {
     fontSize: 24,
     fontWeight: "bold",
-    color: "#000000",
+    color: "white",
     marginLeft: 0,
   },
   divider: {
@@ -145,7 +145,7 @@ const styles = StyleSheet.create({
   themeText: {
     fontSize: 16,
     fontWeight: "bold",
-    color: "#000000",
+    color: "white",
     marginLeft: 15,
   },
   menuItemContainer: {
@@ -157,7 +157,7 @@ const styles = StyleSheet.create({
   drawerItem: {
     fontSize: 16, 
     fontWeight: "bold", 
-    color: "#000000", 
+    color: "white", 
     marginLeft: 15,
   },
   logoutButton: {
@@ -166,11 +166,11 @@ const styles = StyleSheet.create({
     gap: 8,
     padding: 12,
     borderRadius: 8,
-    backgroundColor: "#E80000",
+    backgroundColor: "#15193a",
     justifyContent: "center",
   },
   logoutButtonPressed: {
-    backgroundColor: "#8d0000ff",
+    backgroundColor: "#202552",
   },
   logoutText: {
     color: "white",

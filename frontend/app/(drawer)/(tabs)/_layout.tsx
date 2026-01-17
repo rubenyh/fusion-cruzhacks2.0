@@ -24,7 +24,7 @@ const CustomDrawerButton = () => {
       style={{ padding: 8, marginLeft: 8 }}
       onPress={openDrawer}
     >
-      <MaterialCommunityIcons name="menu" size={24} color="#000000" />
+      <MaterialCommunityIcons name="menu" size={24} color="#f9f9f9" />
     </TouchableOpacity>
   );
 };
@@ -35,17 +35,24 @@ export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
-        headerShown: true,
-        headerLeft: () => <CustomDrawerButton />,
-        tabBarButton: HapticTab,
+      tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
+      headerShown: true,
+      headerTransparent: true,
+      headerLeft: () => <CustomDrawerButton />,
+      headerStyle: {
+        backgroundColor: '#15193a',
+      },
+      tabBarStyle: {
+        backgroundColor: '#15193a',
+      },
+      tabBarButton: HapticTab,
       }}>
       <Tabs.Screen
-        name="stackhome"
-        options={{
-          title: 'Home',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="house.fill" color={color} />,
-        }}
+      name="stackhome"  
+      options={{
+        title: '',
+        tabBarIcon: ({ color }) => <IconSymbol size={28} name="house.fill" color={color} />,
+      }}
       />
     </Tabs>
   );
