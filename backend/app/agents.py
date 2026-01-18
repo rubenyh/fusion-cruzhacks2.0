@@ -26,6 +26,8 @@ class DeepSearchRequest(Model):
     request_id: str
     callback_url: str
 
+
+
 class CleanedEvidence(Model):
     product_name_text: Optional[str] = None
     brand_text: Optional[str] = None
@@ -34,6 +36,11 @@ class CleanedEvidence(Model):
     lawsuits: List[Dict[str, Any]] = []
     warnings: List[Dict[str, Any]] = []
 
+class DeepSearchResponse(Model):
+    cleaned_evidence: CleanedEvidence
+    aggregated_answers: List[str] = []
+    all_sources: List[Dict[str, Any]] = []
+    confidence: float = 0.0
 class WriterRequest(Model):
     request_id: str
     callback_url: str
@@ -342,25 +349,18 @@ async def handle_deep_search(ctx: Context, sender: str, msg: DeepSearchRequest):
     ctx.logger.info(f"   Warnings: {len(cleaned_evidence.warnings)}")
     
     
-    # Forward to writer agent
-    ctx.logger.info(f"📤 Forwarding formatted report to Writer Agent...")
-    writer_request = WriterRequest(
-        cleaned_evidence=cleaned_evidence,
-        aggregated_answers=aggregated_answers,
-        all_sources=all_sources,
-        confidence=confidence,
-        product_name = product_name
+    await ctx.send(
+        writer_agent.address,
+        WriterRequest(
+            request_id=msg.request_id,
+            callback_url=msg.callback_url,
+            product_name=product_name,
+            cleaned_evidence=cleaned_evidence,
+            aggregated_answers=aggregated_answers,
+            all_sources=all_sources,
+            confidence=confidence,
+        )
     )
-    
-    writer_response = await ctx.send(writer_agent.address, writer_request)
-    
-    if isinstance(writer_response, WriterResponse):
-        ctx.logger.info(f"✅ Writer Agent completed report generation")
-        # Send both responses back
-        await ctx.send(sender, response)
-    else:
-        # Send deep search response even if writer fails
-        await ctx.send(sender, response)
 
 @deep_search_agent.on_event("startup")
 async def deep_search_startup(ctx: Context):

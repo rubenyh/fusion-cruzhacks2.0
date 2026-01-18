@@ -1,5 +1,0 @@
-{
-  "status": "error",
-  "stage": "queued",
-  "message": "Failed to call detect agent: All connection attempts failed"
-}
