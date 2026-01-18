@@ -7,8 +7,7 @@ from typing import List, Dict, Optional, Any
 from dotenv import load_dotenv
 import os
 import httpx
-import asyncio
-from agent_function import *
+from .agent_function import *
 import json
 load_dotenv()
 
@@ -447,8 +446,8 @@ async def writer_startup(ctx: Context):
 # ============================================================================
 
 family = Bureau(
-    port=8000,
-    endpoint="http://127.0.0.1:8000/submit"
+    port=8050,
+    endpoint="http://127.0.0.1:8050/submit"
 )
 
 family.add(detect_agent)

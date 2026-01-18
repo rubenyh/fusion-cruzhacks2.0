@@ -4,11 +4,11 @@ from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 
-from DetectService import read_image_bytes, detect_ingredients
-from json_to_pdf import json_to_pdf
+from .utils.DetectService import read_image_bytes, detect_ingredients
+from .utils.json_to_pdf import json_to_pdf
 
 # IMPORT the SAME DetectionInput model used in agents.py
-from agents import DetectionInput   # adjust import to your filename
+from .agents.agents import DetectionInput   # adjust import to your filename
 
 app = FastAPI(title="Image -> Agents -> PDF")
 app.add_middleware(
