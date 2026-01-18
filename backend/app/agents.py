@@ -6,7 +6,7 @@ from uagents import Agent, Bureau, Context, Model
 from typing import List, Dict, Optional, Any
 from dotenv import load_dotenv
 import os
-from groq import Groq
+import httpx
 import asyncio
 from agent_function import *
 import json
@@ -17,15 +17,16 @@ load_dotenv()
 # ============================================================================
 
 class DetectionInput(Model):
-    """Input model for detect agent - accepts detection result as dict"""
     detection_result: Dict[str, Any]
+    request_id: str
+    callback_url: str
 
 class DeepSearchRequest(Model):
-    """Request model for deep search agent"""
     detection_result: Dict[str, Any]
+    request_id: str
+    callback_url: str
 
 class CleanedEvidence(Model):
-    """Cleaned evidence model for uagents"""
     product_name_text: Optional[str] = None
     brand_text: Optional[str] = None
     additional_findings: List[str] = []
@@ -33,77 +34,65 @@ class CleanedEvidence(Model):
     lawsuits: List[Dict[str, Any]] = []
     warnings: List[Dict[str, Any]] = []
 
-
-
-
-class DeepSearchResponse(Model):
-    """Response model from deep search agent"""
-    cleaned_evidence: CleanedEvidence
-    aggregated_answers: List[str] = []
-    all_sources: List[Dict[str, Any]] = []
-    confidence: float = 0.0
-    
-
 class WriterRequest(Model):
-    """Request model for writer agent"""
-    product_name:str
+    request_id: str
+    callback_url: str
+    product_name: str
     cleaned_evidence: CleanedEvidence
     aggregated_answers: List[str] = []
     all_sources: List[Dict[str, Any]] = []
     confidence: float = 0.0
 
 class WriterResponse(Model):
-    """Response model from writer agent"""
     final_report: Dict[str, Any]
     status: str
-
 # ============================================================================
 # Test Agent - Sends test data to detect agent
 # ============================================================================
 
-test_agent = Agent(
-    name="test_agent",
-    seed="test agent seed phrase",
-    port=8010,
-)
+# test_agent = Agent(
+#     name="test_agent",
+#     seed="test agent seed phrase",
+#     port=8010,
+# )
 
-@test_agent.on_event("startup")
-async def test_startup(ctx: Context):
-    ctx.logger.info(f"🧪 Test Agent Address: {test_agent.address}")
-    ctx.logger.info("Waiting 5 seconds before sending test message...")
-    await asyncio.sleep(5)
+# @test_agent.on_event("startup")
+# async def test_startup(ctx: Context):
+#     ctx.logger.info(f"🧪 Test Agent Address: {test_agent.address}")
+#     ctx.logger.info("Waiting 5 seconds before sending test message...")
+#     await asyncio.sleep(5)
     
-    # Test data for MEGA MONSTER ENERGY
-    test_data = {
-        "product": {
-            "product_name": "MEGA MONSTER ENERGY",
-            "brand": "MONSTER",
-            "manufacturer_or_company": None,
-            "category": "Energy Drink"
-        },
-        "research_queries": [
-            "MONSTER MEGA MONSTER ENERGY lawsuit",
-            "MEGA MONSTER ENERGY ingredients complaint",
-            "Monster Energy drink recall",
-            "Monster Energy warnings",
-            "Monster Energy adverse events"
-        ],
-        "evidence": {
-            "product_name_text": "MEGA MONSTER ENERGY",
-            "brand_text": "MONSTER"
-        },
-        "confidence": 0.5
-    }
+#     # Test data for MEGA MONSTER ENERGY
+#     test_data = {
+#         "product": {
+#             "product_name": "MEGA MONSTER ENERGY",
+#             "brand": "MONSTER",
+#             "manufacturer_or_company": None,
+#             "category": "Energy Drink"
+#         },
+#         "research_queries": [
+#             "MONSTER MEGA MONSTER ENERGY lawsuit",
+#             "MEGA MONSTER ENERGY ingredients complaint",
+#             "Monster Energy drink recall",
+#             "Monster Energy warnings",
+#             "Monster Energy adverse events"
+#         ],
+#         "evidence": {
+#             "product_name_text": "MEGA MONSTER ENERGY",
+#             "brand_text": "MONSTER"
+#         },
+#         "confidence": 0.5
+#     }
     
-    test_message = DetectionInput(detection_result=test_data)
+#     test_message = DetectionInput(detection_result=test_data)
     
-    ctx.logger.info(f"📤 Sending test message to Detect Agent...")
-    ctx.logger.info(f"   Product: {test_data['product']['product_name']}")
-    ctx.logger.info(f"   Brand: {test_data['product']['brand']}")
-    ctx.logger.info(f"   Queries: {len(test_data['research_queries'])}")
+#     ctx.logger.info(f"📤 Sending test message to Detect Agent...")
+#     ctx.logger.info(f"   Product: {test_data['product']['product_name']}")
+#     ctx.logger.info(f"   Brand: {test_data['product']['brand']}")
+#     ctx.logger.info(f"   Queries: {len(test_data['research_queries'])}")
     
-    await ctx.send(detect_agent.address, test_message)
-    ctx.logger.info("✅ Test message sent!")
+#     await ctx.send(detect_agent.address, test_message)
+#     ctx.logger.info("✅ Test message sent!")
 
 # ============================================================================
 # Detect Agent - Receives detection and forwards to deep search
@@ -118,34 +107,19 @@ detect_agent = Agent(
 
 @detect_agent.on_message(model=DetectionInput)
 async def handle_detection(ctx: Context, sender: str, msg: DetectionInput):
-    ctx.logger.info(f"🔍 Detect Agent received detection from {sender}")
-    
     detection_dict = msg.detection_result
     product_name = detection_dict.get("product", {}).get("product_name", "Unknown")
-    ctx.logger.info(f"   Product: {product_name}")
-    
-    # Forward to deep search agent
-    request = DeepSearchRequest(detection_result=detection_dict)
-    ctx.logger.info(f"📤 Forwarding to Deep Search Agent...")
-    
-    response = await ctx.send(deep_search_agent.address, request)
-    
-    if isinstance(response, DeepSearchResponse):
-        ctx.logger.info(f"✅ Deep search completed!")
-        ctx.logger.info(f"   Confidence: {response.confidence}")
-        ctx.logger.info(f"   Recalls: {len(response.cleaned_evidence.recalls)}")
-        ctx.logger.info(f"   Lawsuits: {len(response.cleaned_evidence.lawsuits)}")
-        ctx.logger.info(f"   Warnings: {len(response.cleaned_evidence.warnings)}")
-        
-        if response.formatted_report:
-            risk_level = response.formatted_report.get("executive_summary", {}).get("overall_risk_level", "Unknown")
-            ctx.logger.info(f"   Risk Level: {risk_level}")
-            ctx.logger.info(f"   Report formatted and sent to writer agent")
-        
-        # Send response back to sender
-        await ctx.send(sender, response)
-    else:
-        ctx.logger.error("❌ Invalid response from deep search agent")
+    ctx.logger.info(f"🔍 Detect got product: {product_name}")
+
+    await ctx.send(
+        deep_search_agent.address,
+        DeepSearchRequest(
+            detection_result=detection_dict,
+            request_id=msg.request_id,
+            callback_url=msg.callback_url,
+        )
+    )
+
 
 @detect_agent.on_event("startup")
 async def detect_startup(ctx: Context):
@@ -307,6 +281,9 @@ async def handle_deep_search(ctx: Context, sender: str, msg: DeepSearchRequest):
     product_name = detection_dict.get("product", {}).get("product_name", "Unknown")
     ctx.logger.info(f"   Product: {product_name}")
     
+
+    request_id = detection_dict.get("request_id")
+    callback_url = detection_dict.get("callback_url")
     # Get research queries
     queries = detection_dict.get("research_queries", [])
     
@@ -416,9 +393,13 @@ async def handle_writer(ctx: Context, sender: str, msg: WriterRequest):
         status="success"
     )
     ctx.logger.info(f"🔍 Final report: {final_report}")
-    
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        await client.post(
+            msg.callback_url,
+            json={"final_report": final_report}
+        )
     await ctx.send(sender, response)
-
+    ctx.logger.info(f"✅ Report sent to webhook for request_id={msg.request_id}")
 @writer_agent.on_event("startup")
 async def writer_startup(ctx: Context):
     ctx.logger.info(f"✍️  Writer Agent Address: {writer_agent.address}")
@@ -430,8 +411,8 @@ async def writer_startup(ctx: Context):
 #     endpoint=["http://127.0.0.1:8004/submit"],
 # )
 
-class AdvisorRequest(Model):
-    final_report : Dict
+# class AdvisorRequest(Model):
+#     final_report : Dict
 
 # class AdvisorResponse(Model):
 #     test:any
@@ -473,7 +454,7 @@ family = Bureau(
 family.add(detect_agent)
 family.add(deep_search_agent)
 family.add(writer_agent)
-family.add(test_agent)
+# family.add(test_agent)
 
 # ============================================================================
 # Main Entry Point
