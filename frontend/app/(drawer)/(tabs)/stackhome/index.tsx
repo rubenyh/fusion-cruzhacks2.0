@@ -13,6 +13,7 @@ const API_CONFIG = {
   historyEndpoint: "/reports"
 };
 
+const StackHomeScreen: React.FC = () => {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [history, setHistory] = useState<any[]>([]);
@@ -44,91 +45,91 @@ const API_CONFIG = {
     if (!result.canceled && result.assets[0]) setSelectedImage(result.assets[0].uri);
   };
 
-const fetchHistory = async () => {
-  if (!isAuthenticated) return;
+  const fetchHistory = async () => {
+    if (!isAuthenticated) return;
 
-  setLoadingHistory(true);
+    setLoadingHistory(true);
 
-  try {
-    const token = await (typeof getCredentials === 'function' ? getCredentials() : null);
-    if (!token) {
-      setHistory([]);
-      setLoadingHistory(false);
-      return;
-    }
-    const data = await fetchWithAuthToken(
-      `${API_CONFIG.baseUrl}${API_CONFIG.historyEndpoint}`,
-      token
-    );
-
-    console.log("Fetched history:", data);
-
-    // Backend returns an array directly now
-    const reports = Array.isArray(data) ? data : [];
-
-    setHistory(
-      reports.sort(
-        (a: any, b: any) =>
-          new Date(b.created_at).getTime() -
-          new Date(a.created_at).getTime()
-      )
-    );
-  } catch (err) {
-    console.error(err);
-    setHistory([]);
-  } finally {
-    setLoadingHistory(false);
-  }
-};
-
-const uploadImage = async () => {
-  if (!selectedImage) {
-    Alert.alert("No Image", "Please select or take a photo first.");
-    return;
-  }
-
-  setIsUploading(true);
-
-  try {
-    const token = await (typeof getCredentials === 'function' ? getCredentials() : null);
-    if (!token) {
-      Alert.alert("Not Authenticated", "Please log in first.");
-      setIsUploading(false);
-      return;
-    }
-
-    const formData = new FormData();
-    formData.append("image", {
-      uri: selectedImage,
-      name: "photo.jpg",
-      type: "image/jpeg",
-    } as any);
-
-    const res = await fetch(
-      `${API_CONFIG.baseUrl}${API_CONFIG.uploadEndpoint}`,
-      {
-        method: "POST",
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-        body: formData,
+    try {
+      const token = await (typeof getCredentials === 'function' ? getCredentials() : null);
+      if (!token) {
+        setHistory([]);
+        setLoadingHistory(false);
+        return;
       }
-    );
+      const data = await fetchWithAuthToken(
+        `${API_CONFIG.baseUrl}${API_CONFIG.historyEndpoint}`,
+        token
+      );
 
-    if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
+      console.log("Fetched history:", data);
 
-    const json = await res.json();
-    setPendingRequestId(json.request_id);
-    setShowTaskModal(true);
-    setSelectedImage(null);
-    fetchHistory();
-  } catch (err) {
-    console.error(err);
-    setHistory([]);
-  } finally {
-    setLoadingHistory(false);
-  }
-};
+      // Backend returns an array directly now
+      const reports = Array.isArray(data) ? data : [];
+
+      setHistory(
+        reports.sort(
+          (a: any, b: any) =>
+            new Date(b.created_at).getTime() -
+            new Date(a.created_at).getTime()
+        )
+      );
+    } catch (err) {
+      console.error(err);
+      setHistory([]);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  const uploadImage = async () => {
+    if (!selectedImage) {
+      Alert.alert("No Image", "Please select or take a photo first.");
+      return;
+    }
+
+    setIsUploading(true);
+
+    try {
+      const token = await (typeof getCredentials === 'function' ? getCredentials() : null);
+      if (!token) {
+        Alert.alert("Not Authenticated", "Please log in first.");
+        setIsUploading(false);
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append("image", {
+        uri: selectedImage,
+        name: "photo.jpg",
+        type: "image/jpeg",
+      } as any);
+
+      const res = await fetch(
+        `${API_CONFIG.baseUrl}${API_CONFIG.uploadEndpoint}`,
+        {
+          method: "POST",
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+          body: formData,
+        }
+      );
+
+      if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
+
+      const json = await res.json();
+      setPendingRequestId(json.request_id);
+      setShowTaskModal(true);
+      setSelectedImage(null);
+      fetchHistory();
+    } catch (err) {
+      console.error(err);
+      setHistory([]);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
 
   useEffect(() => { fetchHistory(); }, [isAuthenticated]);
 
@@ -248,7 +249,10 @@ const uploadImage = async () => {
       </ScrollView>
     </>
   );
-}
+};
+
+export default StackHomeScreen;
+
 
 const styles = StyleSheet.create({
   container: { padding: 16, backgroundColor: "#333552", flexGrow: 1 },
@@ -268,42 +272,37 @@ const styles = StyleSheet.create({
   placeholderText: { color: "#b3b8e0", fontSize: 16, marginTop: 10 },
   loginButton: { backgroundColor: "#2563EB", paddingVertical: 10, paddingHorizontal: 20, borderRadius: 8, marginTop: 12 },
   loginButtonText: { color: "white", fontSize: 16, fontWeight: "600" },
-historyItem: {
-  backgroundColor: "#1f2247",
-  borderRadius: 14,
-  padding: 14,
-  marginBottom: 12,
-  borderWidth: 1,
-  borderColor: "#2f3260",
-},
-
-historyHeader: {
-  flexDirection: "row",
-  alignItems: "center",
-  gap: 8,
-},
-
-historyTitle: {
-  color: "white",
-  fontSize: 16,
-  fontWeight: "bold",
-},
-
-historySubtext: {
-  color: "#b3b8e0",
-  marginTop: 6,
-  fontSize: 14,
-},
-
-historyMeta: {
-  color: "#8f94c2",
-  marginTop: 6,
-  fontSize: 13,
-},
-
-historyDate: {
-  color: "#666b99",
-  marginTop: 6,
-  fontSize: 12,
-},
+  historyItem: {
+    backgroundColor: "#1f2247",
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "#2f3260",
+  },
+  historyHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  historyTitle: {
+    color: "white",
+    fontSize: 16,
+    fontWeight: "bold",
+  },
+  historySubtext: {
+    color: "#b3b8e0",
+    marginTop: 6,
+    fontSize: 14,
+  },
+  historyMeta: {
+    color: "#8f94c2",
+    marginTop: 6,
+    fontSize: 13,
+  },
+  historyDate: {
+    color: "#666b99",
+    marginTop: 6,
+    fontSize: 12,
+  },
 });
