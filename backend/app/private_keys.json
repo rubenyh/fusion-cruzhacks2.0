@@ -1,0 +1,14 @@
+{
+    "deep_search_agent": {
+        "identity_key": "0427a889b14712f549904bd0d77f233fa27b07f7f438e2d322c2fc21f717c0fe",
+        "wallet_key": "SB6m0ct6uJPbgsn6rf/H+FllMrwoaZjkddNlzf+9E6I="
+    },
+    "detect_agent": {
+        "identity_key": "96f4e454886a9a7afaa7a7cdb5634606c96c575991dec65d2f823351bc730a74",
+        "wallet_key": "Wk0sRgrUcnOtTuTKvhTbgz2tMBgypsb3ujQWmvfrXMc="
+    },
+    "test_client": {
+        "identity_key": "0629e0695adf0ff4651c6db5b9aa76f5271709b25777b6ad0059342f97e7d2d6",
+        "wallet_key": "utlFL+4IyvDz6DCwj6gIsoqLvde9TvS0a14s3FHXqqM="
+    }
+}

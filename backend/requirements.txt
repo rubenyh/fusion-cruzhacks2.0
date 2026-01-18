@@ -1,4 +1,9 @@
 fastapi
 uvicorn
 python-dotenv
-python-multipart
+langchain-groq
+python-dotenv
+google-generativeai
+groq
+uagents
+reportlab
