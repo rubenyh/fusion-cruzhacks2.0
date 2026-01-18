@@ -3,6 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet, Alert, Image, ActivityIndicat
 import * as ImagePicker from "expo-image-picker";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useAuth } from "@/context/AuthContext";
+import { fetchWithAuthToken } from "@/utils/fetchWithAuthToken";
 import { useRouter } from "expo-router";
 import TaskProgressModal from "@/components/ui/TaskProgressModal";
 
@@ -12,14 +13,13 @@ const API_CONFIG = {
   historyEndpoint: "/reports"
 };
 
-export default function UploadScreen() {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [history, setHistory] = useState<any[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [showTaskModal, setShowTaskModal] = useState(false);
   const [pendingRequestId, setPendingRequestId] = useState<string | null>(null);
-  const { isAuthenticated, login } = useAuth();
+  const { isAuthenticated, login, getCredentials } = useAuth();
   const router = useRouter();
 
   const requestPermissions = async () => {
@@ -53,8 +53,14 @@ const uploadImage = async () => {
   setIsUploading(true);
 
   try {
-    const formData = new FormData();
+    const token = await (typeof getCredentials === 'function' ? getCredentials() : null);
+    if (!token) {
+      Alert.alert("Not Authenticated", "Please log in first.");
+      setIsUploading(false);
+      return;
+    }
 
+    const formData = new FormData();
     formData.append("image", {
       uri: selectedImage,
       name: "photo.jpg",
@@ -65,6 +71,9 @@ const uploadImage = async () => {
       `${API_CONFIG.baseUrl}${API_CONFIG.uploadEndpoint}`,
       {
         method: "POST",
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
         body: formData,
       }
     );
@@ -89,8 +98,16 @@ const fetchHistory = async () => {
   setLoadingHistory(true);
 
   try {
-    const res = await fetch(`${API_CONFIG.baseUrl}${API_CONFIG.historyEndpoint}`);
-    const data = await res.json();
+    const token = await (typeof getCredentials === 'function' ? getCredentials() : null);
+    if (!token) {
+      setHistory([]);
+      setLoadingHistory(false);
+      return;
+    }
+    const data = await fetchWithAuthToken(
+      `${API_CONFIG.baseUrl}${API_CONFIG.historyEndpoint}`,
+      token
+    );
 
     console.log("Fetched history:", data);
 
