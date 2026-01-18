@@ -15,7 +15,7 @@ from .agents import DetectionInput, detect_agent
 import boto3
 from io import BytesIO
 
-
+# AWS Config
 AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
 AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
 AWS_S3_BUCKET = os.getenv("AWS_S3_BUCKET")
@@ -28,18 +28,7 @@ s3_client = boto3.client(
     region_name=AWS_REGION
 )
 
-async def upload_file_to_s3(file: UploadFile) -> str:
-    ext = file.filename.split(".")[-1]
-    key = f"images/{uuid.uuid4().hex}.{ext}"
-    await asyncio.to_thread(
-        s3_client.upload_fileobj,
-        file.file,
-        AWS_S3_BUCKET,
-        key,
-        ExtraArgs={"ContentType": file.content_type}
-    )
-    return f"https://{AWS_S3_BUCKET}.s3.{AWS_REGION}.amazonaws.com/{key}"
-
+# FastAPI
 app = FastAPI(title="Image -> Agents -> PDF")
 app.add_middleware(
     CORSMiddleware,
@@ -62,20 +51,20 @@ except Exception:
     _CLIENT_IDENTITY = None
 
 PENDING: dict[str, asyncio.Future] = {}
-
 DETECT_AGENT_SUBMIT = os.getenv("DETECT_AGENT_SUBMIT", "http://127.0.0.1:8000/submit")
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "http://127.0.0.1:8080")
 DB_NAME = os.environ.get("MONGO_DB", "cruzhack")
 COLL_NAME = os.environ.get("MONGO_COLLECTION", "reports")
 coll = client[DB_NAME][COLL_NAME]
 
+# Webhook endpoint
 @app.post("/report/webhook/{request_id}")
 async def report_webhook(request_id: str, request: Request):
     payload = await request.json()
     fut = PENDING.get(request_id)
     if fut and not fut.done():
         fut.set_result(payload)
-    # Update MongoDB with final report
+
     final_report = payload.get("final_report")
     if final_report:
         await asyncio.to_thread(
@@ -85,39 +74,38 @@ async def report_webhook(request_id: str, request: Request):
         )
     return {"ok": True}
 
-class ReportInput(BaseModel):
-    report: dict
-
+# POST image -> generate report
 @app.post("/report-json")
 async def report_json(image: UploadFile = File(...), user=Depends(lambda: {"sub": "test_user"})):
     if not image.content_type or not image.content_type.startswith("image/"):
         raise HTTPException(400, "Upload must be an image")
 
-    # Read image bytes into memory first
     img_bytes = await image.read()
     await image.close()
 
-    # Upload to S3 using BytesIO
+    # Upload to S3 without ACL (avoid bucket errors)
     s3_key = f"images/{uuid.uuid4().hex}.{image.filename.split('.')[-1]}"
-    s3_client.upload_fileobj(
+    await asyncio.to_thread(
+        s3_client.upload_fileobj,
         BytesIO(img_bytes),
         AWS_S3_BUCKET,
         s3_key,
         ExtraArgs={"ContentType": image.content_type}
     )
-    s3_url = f"https://{AWS_S3_BUCKET}.s3.{AWS_REGION}.amazonaws.com/{s3_key}"
 
-    # Detect ingredients using the same bytes
-    detection = detect_ingredients(img_bytes)
-    if hasattr(detection, "model_dump"):
-        original_detection = detection.model_dump()
+    # Proper URL to avoid 301 redirect
+    if AWS_REGION == "us-east-1":
+        s3_url = f"https://{AWS_S3_BUCKET}.s3.amazonaws.com/{s3_key}"
     else:
-        original_detection = detection
+        s3_url = f"https://{AWS_S3_BUCKET}.s3.{AWS_REGION}.amazonaws.com/{s3_key}"
+
+    detection = detect_ingredients(img_bytes)
+    original_detection = detection.model_dump() if hasattr(detection, "model_dump") else detection
 
     request_id = uuid.uuid4().hex
     callback_url = f"{PUBLIC_BASE_URL}/report/webhook/{request_id}"
 
-    # Save initial report to MongoDB
+    # Insert initial report to MongoDB
     doc = {
         "user_id": user.get("sub"),
         "request_id": request_id,
@@ -133,17 +121,16 @@ async def report_json(image: UploadFile = File(...), user=Depends(lambda: {"sub"
     fut = loop.create_future()
     PENDING[request_id] = fut
 
-    digest = "detectioninput-v1"
+    try:
+        digest = UA_Model.build_schema_digest(DetectionInput)
+    except Exception:
+        digest = "detectioninput-v1"
+
     message = DetectionInput(
         detection_result=original_detection,
         request_id=request_id,
         callback_url=callback_url,
     )
-
-    try:
-        digest = UA_Model.build_schema_digest(DetectionInput)
-    except Exception:
-        pass
 
     payload_json = json.dumps(message.model_dump(), separators=(",", ":"), ensure_ascii=False)
     payload_b64 = base64.b64encode(payload_json.encode()).decode()
@@ -178,7 +165,7 @@ async def report_json(image: UploadFile = File(...), user=Depends(lambda: {"sub"
     if not isinstance(final_report, dict):
         raise HTTPException(500, "Webhook did not return final_report")
 
-    # Update final report in MongoDB (safety)
+    # Update MongoDB with final report
     await asyncio.to_thread(
         coll.update_one,
         {"request_id": request_id},
@@ -187,23 +174,24 @@ async def report_json(image: UploadFile = File(...), user=Depends(lambda: {"sub"
 
     return JSONResponse({"request_id": request_id, "final_report": final_report, "image_url": s3_url})
 
+# GET reports for user history
 @app.get("/reports")
 async def get_reports(user=Depends(lambda: {"sub": "test_user"})):
-    db_name = os.environ.get("MONGO_DB", "cruzhack")
-    coll_name = os.environ.get("MONGO_COLLECTION", "reports")
-    coll = client[db_name][coll_name]
-
     docs = await asyncio.to_thread(lambda: list(coll.find({"user_id": user["sub"]})))
-    # transform to array of objects expected by frontend
     result = []
     for doc in docs:
         result.append({
             "request_id": doc.get("request_id"),
             "detection": doc.get("detection", {}),
-            "created_at": doc.get("created_at"),
+            "final_report": doc.get("final_report"),
+            "image_url": doc.get("image_url"),
+            "status": doc.get("status"),
+            "created_at": str(doc.get("created_at")) if doc.get("created_at") else None,
+            "completed_at": doc.get("completed_at"),
         })
-    return result  # must be an array
+    return result
 
+# GET PDF
 @app.get("/report-pdf/{request_id}")
 async def report_pdf(request_id: str, user=Depends(lambda: {"sub": "test_user"})):
     doc = await asyncio.to_thread(coll.find_one, {"request_id": request_id, "user_id": user.get("sub")})
@@ -212,6 +200,27 @@ async def report_pdf(request_id: str, user=Depends(lambda: {"sub": "test_user"})
     pdf_path = os.path.join(RESULTS_DIR, f"{request_id}.pdf")
     json_to_pdf(doc["final_report"], pdf_path)
     return FileResponse(pdf_path, media_type="application/pdf", filename=f"{request_id}.pdf")
+
+# DELETE report (history remove)
+@app.delete("/report/{request_id}")
+async def delete_report(request_id: str, user=Depends(lambda: {"sub": "test_user"})):
+    doc = await asyncio.to_thread(coll.find_one, {"request_id": request_id, "user_id": user.get("sub")})
+    if not doc:
+        raise HTTPException(404, "Report not found")
+    image_url = doc.get("image_url")
+    if image_url:
+        # Handle both us-east-1 and other regions
+        if AWS_REGION == "us-east-1":
+            key = image_url.split(f"https://{AWS_S3_BUCKET}.s3.amazonaws.com/")[-1]
+        else:
+            key = image_url.split(f"https://{AWS_S3_BUCKET}.s3.{AWS_REGION}.amazonaws.com/")[-1]
+        try:
+            await asyncio.to_thread(s3_client.delete_object, Bucket=AWS_S3_BUCKET, Key=key)
+        except Exception as e:
+            print("Failed to delete image from S3:", e)
+
+    await asyncio.to_thread(coll.delete_one, {"request_id": request_id, "user_id": user.get("sub")})
+    return {"ok": True, "message": "Report deleted successfully"}
 
 if __name__ == "__main__":
     import uvicorn

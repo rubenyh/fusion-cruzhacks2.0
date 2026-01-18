@@ -3,6 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet, Alert, Image, ActivityIndicat
 import * as ImagePicker from "expo-image-picker";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useAuth } from "@/context/AuthContext";
+import { useRouter } from "expo-router";
 
 const API_CONFIG = { 
   baseUrl: process.env.EXPO_PUBLIC_API_BASE_URL!, 
@@ -16,6 +17,7 @@ export default function UploadScreen() {
   const [history, setHistory] = useState<any[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const { isAuthenticated, login } = useAuth();
+  const router = useRouter();
 
   const requestPermissions = async () => {
     const camera = await ImagePicker.requestCameraPermissionsAsync();
@@ -39,37 +41,74 @@ export default function UploadScreen() {
     if (!result.canceled && result.assets[0]) setSelectedImage(result.assets[0].uri);
   };
 
-  const uploadImage = async () => {
-    if (!selectedImage) { Alert.alert("No Image", "Please select or take a photo first."); return; }
-    setIsUploading(true);
-    try {
-      const formData = new FormData();
-      formData.append("image", 
-        { uri: selectedImage, name: `photo.jpg`, type: "image/jpeg" } as any
-      );
-      const res = await fetch(`${API_CONFIG.baseUrl}${API_CONFIG.uploadEndpoint}`, {
-        method: "POST", body: formData
-      });
-      if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
-      Alert.alert("Success", "Image uploaded successfully!");
-      setSelectedImage(null);
-      fetchHistory(); // refresh history automatically
-    } catch (err: any) { Alert.alert("Upload Failed", err.message || String(err)); }
-    finally { setIsUploading(false); }
-  };
+const uploadImage = async () => {
+  if (!selectedImage) {
+    Alert.alert("No Image", "Please select or take a photo first.");
+    return;
+  }
+
+  setIsUploading(true);
+
+  try {
+    const formData = new FormData();
+
+    formData.append("image", {
+      uri: selectedImage,
+      name: "photo.jpg",
+      type: "image/jpeg",
+    } as any);
+
+    const res = await fetch(
+      `${API_CONFIG.baseUrl}${API_CONFIG.uploadEndpoint}`,
+      {
+        method: "POST",
+        body: formData,
+      }
+    );
+
+    if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
+
+    const json = await res.json();
+
+router.push({
+  pathname: "/(drawer)/(tabs)/stackhome/results",
+  params: {
+    report: JSON.stringify({
+      ...json.final_report,
+      request_id: json.request_id,
+      image_url: json.image_url,
+    }),
+  },
+});
+
+    setSelectedImage(null);
+    fetchHistory();
+  } catch (err: any) {
+    Alert.alert("Upload Failed", err.message || String(err));
+  } finally {
+    setIsUploading(false);
+  }
+};
 
 const fetchHistory = async () => {
   if (!isAuthenticated) return;
+
   setLoadingHistory(true);
+
   try {
-    const res = await fetch(`${API_CONFIG.baseUrl}/reports`);
+    const res = await fetch(`${API_CONFIG.baseUrl}${API_CONFIG.historyEndpoint}`);
     const data = await res.json();
+
     console.log("Fetched history:", data);
 
-    const reports = Array.isArray(data.reports) ? data.reports : [];
+    // Backend returns an array directly now
+    const reports = Array.isArray(data) ? data : [];
+
     setHistory(
       reports.sort(
-        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        (a: any, b: any) =>
+          new Date(b.created_at).getTime() -
+          new Date(a.created_at).getTime()
       )
     );
   } catch (err) {
@@ -127,21 +166,51 @@ const fetchHistory = async () => {
 
             {loadingHistory ? (
               <ActivityIndicator color="white" size="large"/>
-            ) : history.length === 0 ? (
-              <Text style={styles.placeholderText}>No history yet...</Text>
-            ) : (
-              history.map(item => (
-                <View key={item.request_id} style={styles.historyItem}>
-                  <Text style={{ color: "white" }}>ID: {item.request_id}</Text>
-                  {item.detection?.image_url && (
-                    <Image source={{ uri: item.detection.image_url }} style={{ width: "100%", height: 150, marginTop: 8, borderRadius: 12 }} />
-                  )}
-                  <Text style={{ color: "white", marginTop: 4 }}>Status: {item.detection?.status}</Text>
-                </View>
-              ))
-            )}
-          </>
-        ) : (
+) : history.length === 0 ? (
+  <Text style={styles.placeholderText}>No history yet...</Text>
+) : (
+history.map(item => {
+  return (
+    <TouchableOpacity
+      key={item.request_id}
+      style={styles.historyItem}
+      onPress={() =>
+        router.push({
+          pathname: "/(drawer)/(tabs)/stackhome/results",
+params: {
+  report: JSON.stringify({
+    ...item.final_report,
+    request_id: item.request_id,
+    image_url: item.image_url,
+  }),
+},
+        })
+      }
+    >
+      <View style={styles.historyHeader}>
+        <MaterialCommunityIcons name="file-document" size={20} color="#b3b8e0" />
+        <Text style={styles.historyTitle}>
+          {item.final_report?.title || "Product Report"}
+        </Text>
+      </View>
+
+      <Text style={styles.historySubtext}>
+        {item.detection?.product?.product_name || "Unknown Product"}
+      </Text>
+
+      <Text style={styles.historyMeta}>
+        Risk Level: {item.final_report?.executive_summary?.overall_risk_level || "N/A"}
+      </Text>
+
+      <Text style={styles.historyDate}>
+        {new Date(item.created_at).toLocaleString()}
+      </Text>
+    </TouchableOpacity>
+  );
+})
+)}
+</>
+) : (
           <View style={styles.historyPlaceholder}>
             <Text style={styles.placeholderText}>Login to save history!</Text>
             <TouchableOpacity style={styles.loginButton} onPress={login}>
@@ -173,5 +242,42 @@ const styles = StyleSheet.create({
   placeholderText: { color: "#b3b8e0", fontSize: 16, marginTop: 10 },
   loginButton: { backgroundColor: "#2563EB", paddingVertical: 10, paddingHorizontal: 20, borderRadius: 8, marginTop: 12 },
   loginButtonText: { color: "white", fontSize: 16, fontWeight: "600" },
-  historyItem: { backgroundColor: "#1f2247", borderRadius: 12, padding: 12, marginBottom: 12 }
+historyItem: {
+  backgroundColor: "#1f2247",
+  borderRadius: 14,
+  padding: 14,
+  marginBottom: 12,
+  borderWidth: 1,
+  borderColor: "#2f3260",
+},
+
+historyHeader: {
+  flexDirection: "row",
+  alignItems: "center",
+  gap: 8,
+},
+
+historyTitle: {
+  color: "white",
+  fontSize: 16,
+  fontWeight: "bold",
+},
+
+historySubtext: {
+  color: "#b3b8e0",
+  marginTop: 6,
+  fontSize: 14,
+},
+
+historyMeta: {
+  color: "#8f94c2",
+  marginTop: 6,
+  fontSize: 13,
+},
+
+historyDate: {
+  color: "#666b99",
+  marginTop: 6,
+  fontSize: 12,
+},
 });
