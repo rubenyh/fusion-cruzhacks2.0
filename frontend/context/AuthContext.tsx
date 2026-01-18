@@ -36,9 +36,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [accessToken, setAccessToken] = useState<string | null>(null);
 
-  const auth0Domain = process.env.EXPO_PUBLIC_AUTH0_DOMAIN;
-  const clientId = process.env.EXPO_PUBLIC_AUTH0_CLIENT_ID;
-  const audience = process.env.EXPO_PUBLIC_AUTH0_AUDIENCE;
+  const auth0Domain = process.env.EXPO_PUBLIC_AUTH0_DOMAIN ?? '';
+  const clientId = process.env.EXPO_PUBLIC_AUTH0_CLIENT_ID ?? '';
+  const audience = process.env.EXPO_PUBLIC_AUTH0_AUDIENCE ?? '';
   const redirectUri = AuthSession.makeRedirectUri({ useProxy: true } as any);
 console.log('Redirect URI:', redirectUri);
 
@@ -72,27 +72,57 @@ console.log('Redirect URI:', redirectUri);
     }
   };
 
-  const login = async () => {
+  const exchangeCodeForToken = async (code: string) => {
+    const tokenEndpoint = `https://${auth0Domain}/oauth/token`;
+    const response = await fetch(tokenEndpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        client_id: clientId,
+        code,
+        redirect_uri: redirectUri,
+        audience,
+      }).toString(),
+    });
+    if (response.ok) {
+      const data = await response.json();
+      return data.access_token;
+    } else {
+      throw new Error('Failed to exchange code for token');
+    }
+  };
+
+   const login = async () => {
     try {
       const request = new AuthSession.AuthRequest({
         clientId,
         scopes: ['openid', 'profile', 'email'],
         redirectUri,
-        responseType: AuthSession.ResponseType.Token,
+        responseType: AuthSession.ResponseType.Code,  // Changed to Code for Authorization Code flow
+        extraParams: {
+          audience: audience,
+        },
       });
 
-    const result = await request.promptAsync({ authorizationEndpoint: `https://${auth0Domain}/authorize` });
+      const result = await request.promptAsync({
+        authorizationEndpoint: `https://${auth0Domain}/authorize`,
+      });
 
-    if (result.type === 'success' && result.params.access_token) {
-  const token = result.params.access_token;
-  await SecureStore.setItemAsync('accessToken', token);
-  setAccessToken(token);
-  await fetchUserInfo(token);
-}
+      if (result.type === 'success' && result.params.code) {
+        const code = result.params.code;
+        const token = await exchangeCodeForToken(code);
+        await SecureStore.setItemAsync('accessToken', token);
+        setAccessToken(token);
+        await fetchUserInfo(token);
+      }
     } catch (err) {
       console.error('Login error', err);
     }
   };
+
 
   const logout = async () => {
     try {

@@ -1,19 +1,21 @@
 import asyncio, uuid, os, json, base64
+from io import BytesIO
+from datetime import datetime
+
 import httpx
-from pydantic import BaseModel
-from uagents_core.envelope import Envelope
-from uagents_core.identity import Identity
+import boto3
 from fastapi import FastAPI, Request, UploadFile, File, HTTPException, Depends
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from .DetectService import read_image_bytes, detect_ingredients
+
+from .DetectService import detect_ingredients
 from .json_to_pdf import json_to_pdf
 from .db import client
-from datetime import datetime
-from uagents_core.models import Model as UA_Model
 from .agents import DetectionInput, detect_agent
-import boto3
-from io import BytesIO
+from .auth import verify_jwt  # <-- Auth0 JWT verification
+from uagents_core.envelope import Envelope
+from uagents_core.identity import Identity
+from uagents_core.models import Model as UA_Model
 
 # AWS Config
 AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
@@ -28,7 +30,7 @@ s3_client = boto3.client(
     region_name=AWS_REGION
 )
 
-# FastAPI
+# FastAPI setup
 app = FastAPI(title="Image -> Agents -> PDF")
 app.add_middleware(
     CORSMiddleware,
@@ -39,6 +41,7 @@ app.add_middleware(
 RESULTS_DIR = "report_results"
 os.makedirs(RESULTS_DIR, exist_ok=True)
 
+# UAgents identity
 _CLIENT_IDENTITY: Identity | None = None
 try:
     keys_path = os.path.join(os.path.dirname(__file__), "private_keys.json")
@@ -57,7 +60,9 @@ DB_NAME = os.environ.get("MONGO_DB", "cruzhack")
 COLL_NAME = os.environ.get("MONGO_COLLECTION", "reports")
 coll = client[DB_NAME][COLL_NAME]
 
-# Webhook endpoint
+# --- Endpoints ---
+
+# Webhook endpoint (internal)
 @app.post("/report/webhook/{request_id}")
 async def report_webhook(request_id: str, request: Request):
     payload = await request.json()
@@ -74,16 +79,20 @@ async def report_webhook(request_id: str, request: Request):
         )
     return {"ok": True}
 
-# POST image -> generate report
+
+# POST: Upload image & generate report
 @app.post("/report-json")
-async def report_json(image: UploadFile = File(...), user=Depends(lambda: {"sub": "test_user"})):
+async def report_json(
+    image: UploadFile = File(...),
+    user: dict = Depends(verify_jwt),  # <-- Auth0 user
+):
     if not image.content_type or not image.content_type.startswith("image/"):
         raise HTTPException(400, "Upload must be an image")
 
     img_bytes = await image.read()
     await image.close()
 
-    # Upload to S3 without ACL (avoid bucket errors)
+    # Upload to S3
     s3_key = f"images/{uuid.uuid4().hex}.{image.filename.split('.')[-1]}"
     await asyncio.to_thread(
         s3_client.upload_fileobj,
@@ -93,11 +102,7 @@ async def report_json(image: UploadFile = File(...), user=Depends(lambda: {"sub"
         ExtraArgs={"ContentType": image.content_type}
     )
 
-    # Proper URL to avoid 301 redirect
-    if AWS_REGION == "us-east-1":
-        s3_url = f"https://{AWS_S3_BUCKET}.s3.amazonaws.com/{s3_key}"
-    else:
-        s3_url = f"https://{AWS_S3_BUCKET}.s3.{AWS_REGION}.amazonaws.com/{s3_key}"
+    s3_url = f"https://{AWS_S3_BUCKET}.s3.amazonaws.com/{s3_key}" if AWS_REGION == "us-east-1" else f"https://{AWS_S3_BUCKET}.s3.{AWS_REGION}.amazonaws.com/{s3_key}"
 
     detection = detect_ingredients(img_bytes)
     original_detection = detection.model_dump() if hasattr(detection, "model_dump") else detection
@@ -105,7 +110,7 @@ async def report_json(image: UploadFile = File(...), user=Depends(lambda: {"sub"
     request_id = uuid.uuid4().hex
     callback_url = f"{PUBLIC_BASE_URL}/report/webhook/{request_id}"
 
-    # Insert initial report to MongoDB
+    # Save initial report
     doc = {
         "user_id": user.get("sub"),
         "request_id": request_id,
@@ -174,13 +179,13 @@ async def report_json(image: UploadFile = File(...), user=Depends(lambda: {"sub"
 
     return JSONResponse({"request_id": request_id, "final_report": final_report, "image_url": s3_url})
 
-# GET reports for user history
+
+# GET user report history
 @app.get("/reports")
-async def get_reports(user=Depends(lambda: {"sub": "test_user"})):
-    docs = await asyncio.to_thread(lambda: list(coll.find({"user_id": user["sub"]})))
-    result = []
-    for doc in docs:
-        result.append({
+async def get_reports(user: dict = Depends(verify_jwt)):
+    docs = await asyncio.to_thread(lambda: list(coll.find({"user_id": user.get("sub")})))
+    return [
+        {
             "request_id": doc.get("request_id"),
             "detection": doc.get("detection", {}),
             "final_report": doc.get("final_report"),
@@ -188,12 +193,14 @@ async def get_reports(user=Depends(lambda: {"sub": "test_user"})):
             "status": doc.get("status"),
             "created_at": str(doc.get("created_at")) if doc.get("created_at") else None,
             "completed_at": doc.get("completed_at"),
-        })
-    return result
+        }
+        for doc in docs
+    ]
+
 
 # GET PDF
 @app.get("/report-pdf/{request_id}")
-async def report_pdf(request_id: str, user=Depends(lambda: {"sub": "test_user"})):
+async def report_pdf(request_id: str, user: dict = Depends(verify_jwt)):
     doc = await asyncio.to_thread(coll.find_one, {"request_id": request_id, "user_id": user.get("sub")})
     if not doc or "final_report" not in doc:
         raise HTTPException(404, "Report not found or incomplete")
@@ -201,19 +208,16 @@ async def report_pdf(request_id: str, user=Depends(lambda: {"sub": "test_user"})
     json_to_pdf(doc["final_report"], pdf_path)
     return FileResponse(pdf_path, media_type="application/pdf", filename=f"{request_id}.pdf")
 
-# DELETE report (history remove)
+
+# DELETE report
 @app.delete("/report/{request_id}")
-async def delete_report(request_id: str, user=Depends(lambda: {"sub": "test_user"})):
+async def delete_report(request_id: str, user: dict = Depends(verify_jwt)):
     doc = await asyncio.to_thread(coll.find_one, {"request_id": request_id, "user_id": user.get("sub")})
     if not doc:
         raise HTTPException(404, "Report not found")
     image_url = doc.get("image_url")
     if image_url:
-        # Handle both us-east-1 and other regions
-        if AWS_REGION == "us-east-1":
-            key = image_url.split(f"https://{AWS_S3_BUCKET}.s3.amazonaws.com/")[-1]
-        else:
-            key = image_url.split(f"https://{AWS_S3_BUCKET}.s3.{AWS_REGION}.amazonaws.com/")[-1]
+        key = image_url.split(f"https://{AWS_S3_BUCKET}.s3.amazonaws.com/")[-1] if AWS_REGION=="us-east-1" else image_url.split(f"https://{AWS_S3_BUCKET}.s3.{AWS_REGION}.amazonaws.com/")[-1]
         try:
             await asyncio.to_thread(s3_client.delete_object, Bucket=AWS_S3_BUCKET, Key=key)
         except Exception as e:
@@ -221,6 +225,7 @@ async def delete_report(request_id: str, user=Depends(lambda: {"sub": "test_user
 
     await asyncio.to_thread(coll.delete_one, {"request_id": request_id, "user_id": user.get("sub")})
     return {"ok": True, "message": "Report deleted successfully"}
+
 
 if __name__ == "__main__":
     import uvicorn

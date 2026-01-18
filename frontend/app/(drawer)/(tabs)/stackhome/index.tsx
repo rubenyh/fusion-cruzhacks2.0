@@ -16,7 +16,7 @@ export default function UploadScreen() {
   const [isUploading, setIsUploading] = useState(false);
   const [history, setHistory] = useState<any[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
-  const { isAuthenticated, login } = useAuth();
+  const { isAuthenticated, login, getCredentials } = useAuth();
   const router = useRouter();
 
   const requestPermissions = async () => {
@@ -50,6 +50,8 @@ const uploadImage = async () => {
   setIsUploading(true);
 
   try {
+    const token = await getCredentials ();
+
     const formData = new FormData();
 
     formData.append("image", {
@@ -62,6 +64,9 @@ const uploadImage = async () => {
       `${API_CONFIG.baseUrl}${API_CONFIG.uploadEndpoint}`,
       {
         method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
         body: formData,
       }
     );
@@ -70,16 +75,16 @@ const uploadImage = async () => {
 
     const json = await res.json();
 
-router.push({
-  pathname: "/(drawer)/(tabs)/stackhome/results",
-  params: {
-    report: JSON.stringify({
-      ...json.final_report,
-      request_id: json.request_id,
-      image_url: json.image_url,
-    }),
-  },
-});
+    router.push({
+      pathname: "/(drawer)/(tabs)/stackhome/results",
+      params: {
+        report: JSON.stringify({
+          ...json.final_report,
+          request_id: json.request_id,
+          image_url: json.image_url,
+        }),
+      },
+    });
 
     setSelectedImage(null);
     fetchHistory();
@@ -96,12 +101,19 @@ const fetchHistory = async () => {
   setLoadingHistory(true);
 
   try {
-    const res = await fetch(`${API_CONFIG.baseUrl}${API_CONFIG.historyEndpoint}`);
+    const token = await getCredentials ();
+
+    const res = await fetch(
+      `${API_CONFIG.baseUrl}${API_CONFIG.historyEndpoint}`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+
     const data = await res.json();
 
-    console.log("Fetched history:", data);
-
-    // Backend returns an array directly now
     const reports = Array.isArray(data) ? data : [];
 
     setHistory(
@@ -118,7 +130,6 @@ const fetchHistory = async () => {
     setLoadingHistory(false);
   }
 };
-
   useEffect(() => { fetchHistory(); }, [isAuthenticated]);
 
   return (
