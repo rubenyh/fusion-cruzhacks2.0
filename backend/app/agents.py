@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 import os
 import httpx
 import asyncio
-from agent_function import *
+from .agent_function import *
 import json
 load_dotenv()
 

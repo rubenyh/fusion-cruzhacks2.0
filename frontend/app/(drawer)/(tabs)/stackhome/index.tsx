@@ -4,7 +4,7 @@ import * as ImagePicker from "expo-image-picker";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useAuth } from "@/context/AuthContext";
 
-const API_CONFIG = { baseUrl: process.env.EXPO_PUBLIC_API_BASE_URL!, uploadEndpoint: "/api/upload" };
+const API_CONFIG = { baseUrl: process.env.EXPO_PUBLIC_API_BASE_URL!, uploadEndpoint: "/report" };
 
 export default function UploadScreen() {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
@@ -38,9 +38,22 @@ export default function UploadScreen() {
     setIsUploading(true);
     try {
       const formData = new FormData();
-      formData.append("file", { uri: selectedImage, name: `image_${Date.now()}.jpg`, type: "image/jpeg" } as any);
-      const res = await fetch(`${API_CONFIG.baseUrl}${API_CONFIG.uploadEndpoint}`, { method: "POST", body: formData });
-      if (res.ok) { Alert.alert("Success", "Image uploaded successfully!"); setSelectedImage(null); }
+      formData.append("image", 
+        { uri: selectedImage, 
+          name: `photo.jpg`,
+          type: "image/jpeg"
+         } as any);
+      const res = await fetch(`${API_CONFIG.baseUrl}${API_CONFIG.uploadEndpoint}`, {
+         method: "POST", 
+         body: formData,
+        headers: {
+        }
+        });
+      if (res.ok) { 
+        Alert.alert("Success", "Image uploaded successfully!"); 
+        setSelectedImage(null); 
+        const blob = await res.blob();
+      }
       else throw new Error(`Upload failed: ${res.status}`);
     } catch (err: any) { Alert.alert("Upload Failed", err.message || String(err)); }
     finally { setIsUploading(false); }

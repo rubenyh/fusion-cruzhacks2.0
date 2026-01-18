@@ -6,11 +6,11 @@ from fastapi import FastAPI, Request, UploadFile, File, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 
-from DetectService import read_image_bytes, detect_ingredients
-from json_to_pdf import json_to_pdf
+from .DetectService import read_image_bytes, detect_ingredients
+from .json_to_pdf import json_to_pdf
 
 # IMPORT the SAME DetectionInput model used in agents.py
-from agents import DetectionInput, detect_agent   # adjust import to your filename
+from .agents import DetectionInput, detect_agent   # adjust import to your filename
 
 from uagents_core.models import Model as UA_Model
 
@@ -144,4 +144,4 @@ async def report(image: UploadFile = File(...)):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="localhost", port=8080, reload=True)
+    uvicorn.run("app.main:app", host="localhost", port=8080, reload=True)
