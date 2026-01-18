@@ -1,5 +1,6 @@
 import asyncio, uuid, os, json, base64
 import httpx
+from pydantic import BaseModel
 from uagents_core.envelope import Envelope
 from uagents_core.identity import Identity
 from fastapi import FastAPI, Request, UploadFile, File, HTTPException
@@ -41,6 +42,9 @@ os.makedirs(RESULTS_DIR, exist_ok=True)
 
 PENDING: dict[str, asyncio.Future] = {}
 
+class ReportInput(BaseModel):
+    report: dict
+
 @app.post("/report/webhook/{request_id}")
 async def report_webhook(request_id: str, request: Request):
     payload = await request.json()
@@ -50,57 +54,42 @@ async def report_webhook(request_id: str, request: Request):
     return {"ok": True}
 
 
-@app.post("/report")
-async def report(image: UploadFile = File(...)):
+@app.post("/report-json")
+async def report_json(image: UploadFile = File(...)):
     if not image.content_type or not image.content_type.startswith("image/"):
         raise HTTPException(400, "Upload must be an image")
 
-    # 1) Run DetectService (Gemini vision) locally in FastAPI
     img_bytes = read_image_bytes(image)
     detection = detect_ingredients(img_bytes)
+
     if hasattr(detection, "model_dump"):
         original_detection = detection.model_dump()
     else:
         original_detection = detection
 
-    # 2) Prepare request_id + callback_url
     request_id = uuid.uuid4().hex
     callback_url = f"{PUBLIC_BASE_URL}/report/webhook/{request_id}"
 
-    # 3) Create Future to wait for writer webhook
     loop = asyncio.get_running_loop()
     fut = loop.create_future()
     PENDING[request_id] = fut
 
-    # 4) Send to detect_agent using the REQUIRED uAgents envelope
-    # Try to get schema digest if available, else fallback to None or a static string
-    digest = None
-    if hasattr(DetectionInput, "schema"):
-        schema = DetectionInput.schema()
-        digest = schema.get("digest") if isinstance(schema, dict) else None
-    # If still None, fallback to a static string or leave as None
-    if not digest:
-        digest = "detectioninput-v1"  # fallback static string
+    digest = "detectioninput-v1"
 
-    # Create the DetectionInput message
     message = DetectionInput(
         detection_result=original_detection,
         request_id=request_id,
         callback_url=callback_url,
     )
 
-    # Try to compute an exact schema digest using uagents_core helper
     try:
         digest = UA_Model.build_schema_digest(DetectionInput)
     except Exception:
-        # keep existing digest fallback
         pass
 
-    # Build envelope matching uagents_core.envelope.Envelope schema
     payload_json = json.dumps(message.model_dump(), separators=(",", ":"), ensure_ascii=False)
     payload_b64 = base64.b64encode(payload_json.encode()).decode()
 
-    # Build an Envelope and sign it if we have a client identity
     env = Envelope(
         version=1,
         sender=_CLIENT_IDENTITY.address if _CLIENT_IDENTITY else "fastapi",
@@ -114,7 +103,7 @@ async def report(image: UploadFile = File(...)):
         env.sign(_CLIENT_IDENTITY)
 
     envelope = env.model_dump()
-    # model_dump may contain non-serializable types (UUID); convert to JSON-serializable
+
     if envelope.get("session") is not None:
         envelope["session"] = str(envelope["session"])
 
@@ -124,7 +113,6 @@ async def report(image: UploadFile = File(...)):
             PENDING.pop(request_id, None)
             raise HTTPException(500, f"detect_agent submit failed: {r.status_code} {r.text[:200]}")
 
-    # 5) Wait for webhook payload
     try:
         payload = await asyncio.wait_for(fut, timeout=90.0)
     except asyncio.TimeoutError:
@@ -135,12 +123,21 @@ async def report(image: UploadFile = File(...)):
     if not isinstance(final_report, dict):
         raise HTTPException(500, "Webhook did not return final_report")
 
-    # 6) Render PDF and return it
+    return final_report
+
+@app.post("/report-pdf")
+async def report_pdf(data: ReportInput):
+    request_id = uuid.uuid4().hex
+
     pdf_path = os.path.join(RESULTS_DIR, f"{request_id}.pdf")
-    json_to_pdf(final_report, pdf_path)
 
-    return FileResponse(pdf_path, media_type="application/pdf", filename="risk_report.pdf")
+    json_to_pdf(data.report, pdf_path)
 
+    return FileResponse(
+        pdf_path,
+        media_type="application/pdf",
+        filename="risk_report.pdf"
+    )
 
 if __name__ == "__main__":
     import uvicorn

@@ -3,13 +3,15 @@ import { View, Text, TouchableOpacity, StyleSheet, Alert, Image, ActivityIndicat
 import * as ImagePicker from "expo-image-picker";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useAuth } from "@/context/AuthContext";
+import { useRouter } from "expo-router";
 
-const API_CONFIG = { baseUrl: process.env.EXPO_PUBLIC_API_BASE_URL!, uploadEndpoint: "/report" };
+const API_CONFIG = { baseUrl: process.env.EXPO_PUBLIC_API_BASE_URL!, uploadEndpoint: "/report-json" };
 
 export default function UploadScreen() {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const { isAuthenticated, login } = useAuth();
+  const router = useRouter();
 
   const requestPermissions = async () => {
     const camera = await ImagePicker.requestCameraPermissionsAsync();
@@ -33,31 +35,49 @@ export default function UploadScreen() {
     if (!result.canceled && result.assets[0]) setSelectedImage(result.assets[0].uri);
   };
 
-  const uploadImage = async () => {
-    if (!selectedImage) { Alert.alert("No Image", "Please select or take a photo first."); return; }
-    setIsUploading(true);
-    try {
-      const formData = new FormData();
-      formData.append("image", 
-        { uri: selectedImage, 
-          name: `photo.jpg`,
-          type: "image/jpeg"
-         } as any);
-      const res = await fetch(`${API_CONFIG.baseUrl}${API_CONFIG.uploadEndpoint}`, {
-         method: "POST", 
-         body: formData,
-        headers: {
-        }
-        });
-      if (res.ok) { 
-        Alert.alert("Success", "Image uploaded successfully!"); 
-        setSelectedImage(null); 
-        const blob = await res.blob();
+const uploadImage = async () => {
+  if (!selectedImage) {
+    Alert.alert("No Image", "Please select or take a photo first.");
+    return;
+  }
+
+  setIsUploading(true);
+
+  try {
+    const formData = new FormData();
+
+    formData.append("image", {
+      uri: selectedImage,
+      name: "photo.jpg",
+      type: "image/jpeg",
+    } as any);
+
+    const res = await fetch(
+      `${API_CONFIG.baseUrl}${API_CONFIG.uploadEndpoint}`,
+      {
+        method: "POST",
+        body: formData,
       }
-      else throw new Error(`Upload failed: ${res.status}`);
-    } catch (err: any) { Alert.alert("Upload Failed", err.message || String(err)); }
-    finally { setIsUploading(false); }
-  };
+    );
+
+    if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
+
+    const json = await res.json();
+
+    router.push({
+      pathname: "/(drawer)/(tabs)/stackhome/results",
+      params: {
+        report: JSON.stringify(json),
+      },
+    });
+
+    setSelectedImage(null);
+  } catch (err: any) {
+    Alert.alert("Upload Failed", err.message || String(err));
+  } finally {
+    setIsUploading(false);
+  }
+};
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
