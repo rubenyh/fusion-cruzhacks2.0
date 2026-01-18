@@ -4,6 +4,7 @@ import * as ImagePicker from "expo-image-picker";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useAuth } from "@/context/AuthContext";
 import { useRouter } from "expo-router";
+import TaskProgressModal from "@/components/ui/TaskProgressModal";
 
 const API_CONFIG = { 
   baseUrl: process.env.EXPO_PUBLIC_API_BASE_URL!, 
@@ -16,6 +17,8 @@ export default function UploadScreen() {
   const [isUploading, setIsUploading] = useState(false);
   const [history, setHistory] = useState<any[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const [showTaskModal, setShowTaskModal] = useState(false);
+  const [pendingRequestId, setPendingRequestId] = useState<string | null>(null);
   const { isAuthenticated, login } = useAuth();
   const router = useRouter();
 
@@ -69,18 +72,8 @@ const uploadImage = async () => {
     if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
 
     const json = await res.json();
-
-router.push({
-  pathname: "/(drawer)/(tabs)/stackhome/results",
-  params: {
-    report: JSON.stringify({
-      ...json.final_report,
-      request_id: json.request_id,
-      image_url: json.image_url,
-    }),
-  },
-});
-
+    setPendingRequestId(json.request_id);
+    setShowTaskModal(true);
     setSelectedImage(null);
     fetchHistory();
   } catch (err: any) {
@@ -122,105 +115,120 @@ const fetchHistory = async () => {
   useEffect(() => { fetchHistory(); }, [isAuthenticated]);
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>Product Search</Text>
+    <>
+      <TaskProgressModal
+        visible={showTaskModal}
+        onClose={() => setShowTaskModal(false)}
+        requestId={pendingRequestId || ''}
+        apiBaseUrl={API_CONFIG.baseUrl}
+        onComplete={report => {
+          setShowTaskModal(false);
+          setPendingRequestId(null);
+          router.push({
+            pathname: "/(drawer)/(tabs)/stackhome/results",
+            params: {
+              report: JSON.stringify({
+                ...report.final_report,
+                request_id: report.request_id,
+                image_url: report.image_url,
+              }),
+            },
+          });
+        }}
+      />
+      <ScrollView contentContainerStyle={styles.container}>
+        <Text style={styles.title}>Product Search</Text>
 
-      <View style={styles.card}>
-        {!selectedImage ? (
-          <TouchableOpacity style={styles.mainButton} onPress={() => Alert.alert("Select Image Source", "", [
-            { text: "Take Photo", onPress: takePhoto },
-            { text: "Choose from Gallery", onPress: pickFromGallery },
-            { text: "Cancel", style: "cancel" },
-          ])}>
-            <MaterialCommunityIcons name="camera-plus" size={24} color="white"/>
-            <Text style={styles.buttonText}>Upload / Take Picture</Text>
-          </TouchableOpacity>
-        ) : (
-          <View style={styles.imageContainer}>
-            <Image source={{ uri: selectedImage }} style={styles.selectedImage} />
-            <View style={styles.buttonRow}>
-              <TouchableOpacity style={[styles.actionButton, styles.changeButton]} onPress={() => setSelectedImage(null)}>
-                <MaterialCommunityIcons name="image-edit" size={20} color="white"/>
-                <Text style={styles.actionButtonText}>Change</Text>
+        <View style={styles.card}>
+          {!selectedImage ? (
+            <TouchableOpacity style={styles.mainButton} onPress={() => Alert.alert("Select Image Source", "", [
+              { text: "Take Photo", onPress: takePhoto },
+              { text: "Choose from Gallery", onPress: pickFromGallery },
+              { text: "Cancel", style: "cancel" },
+            ])}>
+              <MaterialCommunityIcons name="camera-plus" size={24} color="white"/>
+              <Text style={styles.buttonText}>Upload / Take Picture</Text>
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.imageContainer}>
+              <Image source={{ uri: selectedImage }} style={styles.selectedImage} />
+              <View style={styles.buttonRow}>
+                <TouchableOpacity style={[styles.actionButton, styles.changeButton]} onPress={() => setSelectedImage(null)}>
+                  <MaterialCommunityIcons name="image-edit" size={20} color="white"/>
+                  <Text style={styles.actionButtonText}>Change</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.actionButton, styles.uploadButton]} onPress={uploadImage} disabled={isUploading}>
+                  {isUploading ? <ActivityIndicator color="white"/> : <>
+                    <MaterialCommunityIcons name="cloud-upload" size={20} color="white"/>
+                    <Text style={styles.actionButtonText}>Upload</Text>
+                  </>}
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+        </View>
+
+
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>History</Text>
+          {isAuthenticated ? (
+            <>
+              <TouchableOpacity style={[styles.mainButton, { marginBottom: 12 }]} onPress={fetchHistory}>
+                <MaterialCommunityIcons name="refresh" size={20} color="white"/>
+                <Text style={styles.buttonText}>Refresh History</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.actionButton, styles.uploadButton]} onPress={uploadImage} disabled={isUploading}>
-                {isUploading ? <ActivityIndicator color="white"/> : <>
-                  <MaterialCommunityIcons name="cloud-upload" size={20} color="white"/>
-                  <Text style={styles.actionButtonText}>Upload</Text>
-                </>}
+              {loadingHistory ? (
+                <ActivityIndicator color="white" size="large" />
+              ) : history.length === 0 ? (
+                <Text style={styles.placeholderText}>No history yet...</Text>
+              ) : (
+                history.map((item: any) => (
+                  <TouchableOpacity
+                    key={item.request_id}
+                    style={styles.historyItem}
+                    onPress={() =>
+                      router.push({
+                        pathname: "/(drawer)/(tabs)/stackhome/results",
+                        params: {
+                          report: JSON.stringify({
+                            ...item.final_report,
+                            request_id: item.request_id,
+                            image_url: item.image_url,
+                          }),
+                        },
+                      })
+                    }
+                  >
+                    <View style={styles.historyHeader}>
+                      <MaterialCommunityIcons name="file-document" size={20} color="#b3b8e0" />
+                      <Text style={styles.historyTitle}>
+                        {item.final_report?.title || "Product Report"}
+                      </Text>
+                    </View>
+                    <Text style={styles.historySubtext}>
+                      {item.detection?.product?.product_name || "Unknown Product"}
+                    </Text>
+                    <Text style={styles.historyMeta}>
+                      Risk Level: {item.final_report?.executive_summary?.overall_risk_level || "N/A"}
+                    </Text>
+                    <Text style={styles.historyDate}>
+                      {new Date(item.created_at).toLocaleString()}
+                    </Text>
+                  </TouchableOpacity>
+                ))
+              )}
+            </>
+          ) : (
+            <View style={styles.historyPlaceholder}>
+              <Text style={styles.placeholderText}>Login to save history!</Text>
+              <TouchableOpacity style={styles.loginButton} onPress={login}>
+                <Text style={styles.loginButtonText}>Log In</Text>
               </TouchableOpacity>
             </View>
-          </View>
-        )}
-      </View>
-
-      <View style={styles.card}>
-        <Text style={styles.sectionTitle}>History</Text>
-
-        {isAuthenticated ? (
-          <>
-            <TouchableOpacity style={[styles.mainButton, { marginBottom: 12 }]} onPress={fetchHistory}>
-              <MaterialCommunityIcons name="refresh" size={20} color="white"/>
-              <Text style={styles.buttonText}>Refresh History</Text>
-            </TouchableOpacity>
-
-            {loadingHistory ? (
-              <ActivityIndicator color="white" size="large"/>
-) : history.length === 0 ? (
-  <Text style={styles.placeholderText}>No history yet...</Text>
-) : (
-history.map(item => {
-  return (
-    <TouchableOpacity
-      key={item.request_id}
-      style={styles.historyItem}
-      onPress={() =>
-        router.push({
-          pathname: "/(drawer)/(tabs)/stackhome/results",
-params: {
-  report: JSON.stringify({
-    ...item.final_report,
-    request_id: item.request_id,
-    image_url: item.image_url,
-  }),
-},
-        })
-      }
-    >
-      <View style={styles.historyHeader}>
-        <MaterialCommunityIcons name="file-document" size={20} color="#b3b8e0" />
-        <Text style={styles.historyTitle}>
-          {item.final_report?.title || "Product Report"}
-        </Text>
-      </View>
-
-      <Text style={styles.historySubtext}>
-        {item.detection?.product?.product_name || "Unknown Product"}
-      </Text>
-
-      <Text style={styles.historyMeta}>
-        Risk Level: {item.final_report?.executive_summary?.overall_risk_level || "N/A"}
-      </Text>
-
-      <Text style={styles.historyDate}>
-        {new Date(item.created_at).toLocaleString()}
-      </Text>
-    </TouchableOpacity>
-  );
-})
-)}
-</>
-) : (
-          <View style={styles.historyPlaceholder}>
-            <Text style={styles.placeholderText}>Login to save history!</Text>
-            <TouchableOpacity style={styles.loginButton} onPress={login}>
-              <Text style={styles.loginButtonText}>Log In</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-      </View>
-    </ScrollView>
+          )}
+        </View>
+      </ScrollView>
+    </>
   );
 }
 

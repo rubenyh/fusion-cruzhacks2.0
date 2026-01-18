@@ -14,6 +14,7 @@ from uagents_core.models import Model as UA_Model
 from .agents import DetectionInput, detect_agent
 import boto3
 from io import BytesIO
+from .auth import verify_jwt
 
 # AWS Config
 AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
@@ -74,9 +75,9 @@ async def report_webhook(request_id: str, request: Request):
         )
     return {"ok": True}
 
-# POST image -> generate report
+ # POST image -> generate report
 @app.post("/report-json")
-async def report_json(image: UploadFile = File(...), user=Depends(lambda: {"sub": "test_user"})):
+async def report_json(image: UploadFile = File(...), user=Depends(verify_jwt)):
     if not image.content_type or not image.content_type.startswith("image/"):
         raise HTTPException(400, "Upload must be an image")
 
@@ -174,9 +175,9 @@ async def report_json(image: UploadFile = File(...), user=Depends(lambda: {"sub"
 
     return JSONResponse({"request_id": request_id, "final_report": final_report, "image_url": s3_url})
 
-# GET reports for user history
+ # GET reports for user history
 @app.get("/reports")
-async def get_reports(user=Depends(lambda: {"sub": "test_user"})):
+async def get_reports(user=Depends(verify_jwt)):
     docs = await asyncio.to_thread(lambda: list(coll.find({"user_id": user["sub"]})))
     result = []
     for doc in docs:
@@ -191,9 +192,9 @@ async def get_reports(user=Depends(lambda: {"sub": "test_user"})):
         })
     return result
 
-# GET PDF
+ # GET PDF
 @app.get("/report-pdf/{request_id}")
-async def report_pdf(request_id: str, user=Depends(lambda: {"sub": "test_user"})):
+async def report_pdf(request_id: str, user=Depends(verify_jwt)):
     doc = await asyncio.to_thread(coll.find_one, {"request_id": request_id, "user_id": user.get("sub")})
     if not doc or "final_report" not in doc:
         raise HTTPException(404, "Report not found or incomplete")
@@ -201,9 +202,9 @@ async def report_pdf(request_id: str, user=Depends(lambda: {"sub": "test_user"})
     json_to_pdf(doc["final_report"], pdf_path)
     return FileResponse(pdf_path, media_type="application/pdf", filename=f"{request_id}.pdf")
 
-# DELETE report (history remove)
+ # DELETE report (history remove)
 @app.delete("/report/{request_id}")
-async def delete_report(request_id: str, user=Depends(lambda: {"sub": "test_user"})):
+async def delete_report(request_id: str, user=Depends(verify_jwt)):
     doc = await asyncio.to_thread(coll.find_one, {"request_id": request_id, "user_id": user.get("sub")})
     if not doc:
         raise HTTPException(404, "Report not found")

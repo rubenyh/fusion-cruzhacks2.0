@@ -12,3 +12,5 @@ groq
 uagents
 reportlab
 boto3
+rapidfuzz
+python-multipart
