@@ -1,5 +1,5 @@
 # MongoDB async driver
-pymongo>=4.9,<5.0
+pymongo[srv]>=4.9,<5.0
 # JWT auth
 python-jose[cryptography]
 fastapi
@@ -11,3 +11,4 @@ google-generativeai
 groq
 uagents
 reportlab
+boto3
