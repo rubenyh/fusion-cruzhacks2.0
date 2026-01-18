@@ -2,12 +2,14 @@ import asyncio, uuid, os, json, base64
 import httpx
 from uagents_core.envelope import Envelope
 from uagents_core.identity import Identity
-from fastapi import FastAPI, Request, UploadFile, File, HTTPException
+from fastapi import FastAPI, Request, UploadFile, File, HTTPException, Depends
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
-
+from app.auth import verify_jwt, require_scopes
 from .DetectService import read_image_bytes, detect_ingredients
 from .json_to_pdf import json_to_pdf
+from .db import client
+from datetime import datetime
 
 # IMPORT the SAME DetectionInput model used in agents.py
 from .agents import DetectionInput, detect_agent   # adjust import to your filename
@@ -33,6 +35,15 @@ app.add_middleware(
     allow_methods=["*"], allow_headers=["*"]
 )
 
+@app.get("/public")
+def public():
+    return {"ok": True}
+
+@app.get("/private")
+def private(user=Depends(verify_jwt)):
+    # user contains JWT claims (sub, permissions/scopes, etc.)
+    return {"ok": True, "sub": user.get("sub")}
+
 DETECT_AGENT_SUBMIT = os.getenv("DETECT_AGENT_SUBMIT", "http://127.0.0.1:8000/submit")
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "http://127.0.0.1:8080")
 
@@ -51,7 +62,7 @@ async def report_webhook(request_id: str, request: Request):
 
 
 @app.post("/report")
-async def report(image: UploadFile = File(...)):
+async def report(image: UploadFile = File(...), user=Depends(verify_jwt)):
     if not image.content_type or not image.content_type.startswith("image/"):
         raise HTTPException(400, "Upload must be an image")
 
@@ -63,9 +74,28 @@ async def report(image: UploadFile = File(...)):
     else:
         original_detection = detection
 
+
     # 2) Prepare request_id + callback_url
     request_id = uuid.uuid4().hex
     callback_url = f"{PUBLIC_BASE_URL}/report/webhook/{request_id}"
+
+    # Save detection data to MongoDB before calling agent (to avoid duplicate API cost)
+    try:
+        db_name = os.environ.get("MONGO_DB", "cruzhack")
+        coll_name = os.environ.get("MONGO_COLLECTION", "reports")
+        coll = client[db_name][coll_name]
+        doc = {
+            "request_id": request_id,
+            "detection": original_detection,
+            "image_info": {"filename": image.filename, "content_type": image.content_type},
+            "status": "pending",
+            "created_at": datetime.utcnow(),
+        }
+        # run blocking pymongo in threadpool
+        await run_in_threadpool(coll.insert_one, doc)
+    except Exception:
+        # Don't fail the request if DB write fails; log could be added
+        pass
 
     # 3) Create Future to wait for writer webhook
     loop = asyncio.get_running_loop()
@@ -124,6 +154,7 @@ async def report(image: UploadFile = File(...)):
             PENDING.pop(request_id, None)
             raise HTTPException(500, f"detect_agent submit failed: {r.status_code} {r.text[:200]}")
 
+
     # 5) Wait for webhook payload
     try:
         payload = await asyncio.wait_for(fut, timeout=90.0)
@@ -135,11 +166,37 @@ async def report(image: UploadFile = File(...)):
     if not isinstance(final_report, dict):
         raise HTTPException(500, "Webhook did not return final_report")
 
+    # Update MongoDB with final report
+    try:
+        db_name = os.environ.get("MONGO_DB", "cruzhack")
+        coll_name = os.environ.get("MONGO_COLLECTION", "reports")
+        coll = client[db_name][coll_name]
+        await run_in_threadpool(
+            coll.update_one,
+            {"request_id": request_id},
+            {"$set": {"final_report": final_report, "status": "complete", "completed_at": datetime.utcnow()}},
+        )
+    except Exception:
+        pass
+
     # 6) Render PDF and return it
     pdf_path = os.path.join(RESULTS_DIR, f"{request_id}.pdf")
     json_to_pdf(final_report, pdf_path)
 
     return FileResponse(pdf_path, media_type="application/pdf", filename="risk_report.pdf")
+
+# Endpoint to fetch report history (for dashboard, etc.)
+@app.get("/reports")
+async def reports(user=Depends(verify_jwt)):
+    db_name = os.environ.get("MONGO_DB", "cruzhack")
+    coll_name = os.environ.get("MONGO_COLLECTION", "reports")
+    coll = client[db_name][coll_name]
+
+    def _fetch(limit: int = 20):
+        cursor = coll.find({}, {"_id": 0}).sort("created_at", -1).limit(limit)
+        return list(cursor)
+
+    return await run_in_threadpool(_fetch, 50)
 
 
 if __name__ == "__main__":

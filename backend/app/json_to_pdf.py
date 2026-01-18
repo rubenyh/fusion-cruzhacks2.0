@@ -52,70 +52,87 @@ def json_to_pdf(report: Dict[str, Any], out_path: str) -> str:
         ParagraphStyle(
             name="TitleStyle",
             parent=styles["Title"],
-            fontSize=16,
-            leading=18,
-            spaceAfter=6,
+            fontSize=20,
+            leading=22,
+            spaceAfter=8,
+            alignment=1,  # center
         )
     )
     styles.add(
         ParagraphStyle(
             name="SubTitleStyle",
             parent=styles["Normal"],
-            fontSize=10,
-            leading=12,
+            fontSize=12,
+            leading=14,
             textColor=colors.grey,
-            spaceAfter=10,
+            spaceAfter=12,
+            alignment=1,
         )
     )
     styles.add(
         ParagraphStyle(
             name="H2",
             parent=styles["Heading2"],
-            fontSize=12,
-            leading=14,
+            fontSize=14,
+            leading=16,
             spaceBefore=10,
-            spaceAfter=6,
+            spaceAfter=8,
+            textColor=colors.darkblue,
         )
     )
-    styles.add(ParagraphStyle(name="Small", parent=styles["Normal"], fontSize=9, leading=11))
+    styles.add(ParagraphStyle(name="Small", parent=styles["Normal"], fontSize=10, leading=12))
     styles.add(
         ParagraphStyle(
             name="Tiny",
             parent=styles["Normal"],
-            fontSize=8,
-            leading=10,
+            fontSize=9,
+            leading=11,
             textColor=colors.grey,
         )
     )
 
+    # Use a larger page layout with slightly wider margins for readability
     doc = SimpleDocTemplate(
         out_path,
         pagesize=letter,
-        rightMargin=0.7 * inch,
-        leftMargin=0.7 * inch,
-        topMargin=0.65 * inch,
-        bottomMargin=0.6 * inch,
+        rightMargin=0.6 * inch,
+        leftMargin=0.6 * inch,
+        topMargin=0.5 * inch,
+        bottomMargin=0.5 * inch,
     )
 
     story: List[Any] = []
 
-    # Title + Subtitle
+    # Header: colored bar + Title + Subtitle
+    story.append(Spacer(1, 6))
     story.append(Paragraph(_norm(report.get("title", "")), styles["TitleStyle"]))
     subtitle = report.get("subtitle", {}) or {}
     subtitle_line = f"Category: {_norm(subtitle.get('category'))} | Timeframe: {_norm(subtitle.get('timeframe_reviewed'))}"
     story.append(Paragraph(subtitle_line, styles["SubTitleStyle"]))
+    # Decorative divider
+    story.append(Spacer(1, 4))
+    story.append(Table([[""]], colWidths=[7.4 * inch], style=[("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#2B6CB0"))], hAlign="CENTER"))
+    story.append(Spacer(1, 8))
 
     # Executive Summary
+    # Executive Summary - put inside a light box
     story.append(Paragraph("Executive Summary", styles["H2"]))
     exec_bullets = (report.get("executive_summary", {}) or {}).get("bullets", []) or []
     exec_bullets = [_norm(b) for b in exec_bullets][:4]
-    story.append(
-        ListFlowable(
-            [ListItem(Paragraph(b, styles["Small"]), leftIndent=12) for b in exec_bullets],
-            bulletType="bullet",
-            leftIndent=18,
-        )
+    summary_table = Table(
+        [[ListFlowable([ListItem(Paragraph(b, styles["Small"]) ) for b in exec_bullets], bulletType="bullet")]],
+        colWidths=[7.4 * inch],
+        style=[
+            ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F0F4FF")),
+            ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#BEE3F8")),
+            ("LEFTPADDING", (0, 0), (-1, -1), 8),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+            ("TOPPADDING", (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ],
     )
+    story.append(summary_table)
+    story.append(Spacer(1, 8))
 
     # Findings Overview Table
     story.append(Paragraph("Findings Overview", styles["H2"]))
@@ -132,20 +149,20 @@ def json_to_pdf(report: Dict[str, Any], out_path: str) -> str:
             ]
         )
 
-    tbl = Table(table_data, colWidths=[1.0 * inch, 0.6 * inch, 3.7 * inch, 1.0 * inch])
+    tbl = Table(table_data, colWidths=[1.2 * inch, 0.8 * inch, 4.2 * inch, 1.0 * inch])
     tbl.setStyle(
         TableStyle(
             [
-                ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#E6EEF8")),
                 ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                ("FONTSIZE", (0, 0), (-1, 0), 9),
-                ("FONTSIZE", (0, 1), (-1, -1), 9),
+                ("FONTSIZE", (0, 0), (-1, 0), 11),
+                ("FONTSIZE", (0, 1), (-1, -1), 10),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-                ("LEFTPADDING", (0, 0), (-1, -1), 5),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 5),
-                ("TOPPADDING", (0, 0), (-1, -1), 4),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#D1DCEB")),
+                ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                ("TOPPADDING", (0, 0), (-1, -1), 6),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
             ]
         )
     )
@@ -155,19 +172,17 @@ def json_to_pdf(report: Dict[str, Any], out_path: str) -> str:
     story.append(Paragraph("Key Notable Examples", styles["H2"]))
     examples = report.get("key_notable_examples", {}) or {}
 
-    def add_examples(label: str, items: Union[List[Dict[str, Any]], List[str], None], kind: str) -> None:
-        story.append(Paragraph(f"{label}:", styles["Small"]))
-
+    def add_examples(label: str, items: Union[List[Dict[str, Any]], List[str], None], kind: str) -> List[Any]:
+        # returns a flowable (list) for placing into a two-column table
+        title_para = Paragraph(f"<b>{label}</b>", styles["Small"])
         bullets: List[str] = []
         urls: List[str] = []
 
         if not items:
             bullets = ["No material examples identified."]
         elif isinstance(items, list) and items and isinstance(items[0], str):
-            # Some generators output ["No material examples identified."] as a list of strings
             bullets = [_norm(items[0])]
         else:
-            # list[dict]
             for ex in list(items)[:2]:
                 extra = ""
                 if kind == "lawsuit" and ex.get("status"):
@@ -178,19 +193,23 @@ def json_to_pdf(report: Dict[str, Any], out_path: str) -> str:
                 if ex.get("source_urls"):
                     urls.append(_norm(ex["source_urls"][0]))
 
-        story.append(
-            ListFlowable(
-                [ListItem(Paragraph(b, styles["Small"]), leftIndent=12) for b in bullets[:2]],
-                bulletType="bullet",
-                leftIndent=18,
-            )
-        )
+        flow = [title_para]
+        flow.append(ListFlowable([ListItem(Paragraph(b, styles["Small"])) for b in bullets[:2]], bulletType="bullet"))
         if urls:
-            story.append(Paragraph("Sources: " + "; ".join(urls[:2]), styles["Tiny"]))
+            flow.append(Paragraph("Sources: " + "; ".join(urls[:2]), styles["Tiny"]))
+        return flow
 
-    add_examples("Lawsuits", examples.get("lawsuits"), "lawsuit")
-    add_examples("Recalls", examples.get("recalls"), "recall")
-    add_examples("Warnings", examples.get("warnings"), "warning")
+    col1 = add_examples("Lawsuits", examples.get("lawsuits"), "lawsuit")
+    col2 = add_examples("Recalls", examples.get("recalls"), "recall")
+    col3 = add_examples("Warnings", examples.get("warnings"), "warning")
+
+    # Put examples into a 2-column layout: left = lawsuits+recalls, right = warnings
+    examples_table = Table(
+        [[col1 + col2, col3]],
+        colWidths=[4.0 * inch, 3.4 * inch],
+        style=[("VALIGN", (0, 0), (-1, -1), "TOP")],
+    )
+    story.append(examples_table)
 
     # Risk Implications
     story.append(Paragraph("Risk Implications", styles["H2"]))

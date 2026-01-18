@@ -1,3 +1,7 @@
+# MongoDB async driver
+pymongo>=4.9,<5.0
+# JWT auth
+python-jose[cryptography]
 fastapi
 uvicorn
 python-dotenv
