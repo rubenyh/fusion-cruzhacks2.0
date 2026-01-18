@@ -430,8 +430,8 @@ async def writer_startup(ctx: Context):
 #     endpoint=["http://127.0.0.1:8004/submit"],
 # )
 
-# class AdvisorRequest(Model):
-#     final_report : {}
+class AdvisorRequest(Model):
+    final_report : Dict
 
 # class AdvisorResponse(Model):
 #     test:any
