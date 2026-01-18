@@ -1,4 +1,83 @@
 import React, { useState, useEffect } from "react";
+  const fetchHistory = async () => {
+    if (!isAuthenticated) return;
+    setLoadingHistory(true);
+    try {
+      const token = await (typeof getCredentials === 'function' ? getCredentials() : null);
+      if (!token) {
+        setHistory([]);
+        setLoadingHistory(false);
+        return;
+      }
+      console.log('[fetchHistory] Token:', token);
+      const data = await fetchWithAuthToken(
+        `${API_CONFIG.baseUrl}${API_CONFIG.historyEndpoint}`,
+        token
+      );
+      console.log("Fetched history:", data);
+      // Backend returns an array directly now
+      const reports = Array.isArray(data) ? data : [];
+      setHistory(
+        reports.sort(
+          (a: any, b: any) =>
+            new Date(b.created_at).getTime() -
+            new Date(a.created_at).getTime()
+        )
+      );
+    } catch (err) {
+      console.error(err);
+      setHistory([]);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+  const uploadImage = async () => {
+    if (!selectedImage) {
+      Alert.alert("No Image", "Please select or take a photo first.");
+      return;
+    }
+    setIsUploading(true);
+    try {
+      const token = await (typeof getCredentials === 'function' ? getCredentials() : null);
+      if (!token) {
+        Alert.alert("Not Authenticated", "Please log in first.");
+        setIsUploading(false);
+        return;
+      }
+      console.log('[uploadImage] Token:', token);
+      const formData = new FormData();
+      formData.append("image", {
+        uri: selectedImage,
+        name: "photo.jpg",
+        type: "image/jpeg",
+      } as any);
+      const res = await fetch(
+        `${API_CONFIG.baseUrl}${API_CONFIG.uploadEndpoint}`,
+        {
+          method: "POST",
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+          body: formData,
+        }
+      );
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error('[uploadImage] Error response:', errorText);
+        throw new Error(`Upload failed: ${res.status}`);
+      }
+      const json = await res.json();
+      setPendingRequestId(json.request_id);
+      setShowTaskModal(true);
+      setSelectedImage(null);
+      fetchHistory();
+    } catch (err) {
+      Alert.alert("Upload Failed", err.message || String(err));
+    } finally {
+      setIsUploading(false);
+    }
+  };
+import React, { useState, useEffect } from "react";
 import { View, Text, TouchableOpacity, StyleSheet, Alert, Image, ActivityIndicator, ScrollView } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
