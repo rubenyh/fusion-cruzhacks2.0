@@ -44,6 +44,43 @@ const API_CONFIG = {
     if (!result.canceled && result.assets[0]) setSelectedImage(result.assets[0].uri);
   };
 
+const fetchHistory = async () => {
+  if (!isAuthenticated) return;
+
+  setLoadingHistory(true);
+
+  try {
+    const token = await (typeof getCredentials === 'function' ? getCredentials() : null);
+    if (!token) {
+      setHistory([]);
+      setLoadingHistory(false);
+      return;
+    }
+    const data = await fetchWithAuthToken(
+      `${API_CONFIG.baseUrl}${API_CONFIG.historyEndpoint}`,
+      token
+    );
+
+    console.log("Fetched history:", data);
+
+    // Backend returns an array directly now
+    const reports = Array.isArray(data) ? data : [];
+
+    setHistory(
+      reports.sort(
+        (a: any, b: any) =>
+          new Date(b.created_at).getTime() -
+          new Date(a.created_at).getTime()
+      )
+    );
+  } catch (err) {
+    console.error(err);
+    setHistory([]);
+  } finally {
+    setLoadingHistory(false);
+  }
+};
+
 const uploadImage = async () => {
   if (!selectedImage) {
     Alert.alert("No Image", "Please select or take a photo first.");
@@ -85,42 +122,6 @@ const uploadImage = async () => {
     setShowTaskModal(true);
     setSelectedImage(null);
     fetchHistory();
-  const fetchHistory = async () => {
-    if (!isAuthenticated) return;
-
-    setLoadingHistory(true);
-
-    try {
-      const token = await (typeof getCredentials === 'function' ? getCredentials() : null);
-      if (!token) {
-        setHistory([]);
-        setLoadingHistory(false);
-        return;
-      }
-      const data = await fetchWithAuthToken(
-        `${API_CONFIG.baseUrl}${API_CONFIG.historyEndpoint}`,
-        token
-      );
-
-      console.log("Fetched history:", data);
-
-      // Backend returns an array directly now
-      const reports = Array.isArray(data) ? data : [];
-
-      setHistory(
-        reports.sort(
-          (a: any, b: any) =>
-            new Date(b.created_at).getTime() -
-            new Date(a.created_at).getTime()
-        )
-      );
-    } catch (err) {
-      console.error(err);
-      setHistory([]);
-    } finally {
-      setLoadingHistory(false);
-    }
-  };
   } catch (err) {
     console.error(err);
     setHistory([]);
